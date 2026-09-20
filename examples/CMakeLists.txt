@@ -1,0 +1,5 @@
+add_executable(pin_example_minimal minimal/main.cpp)
+target_link_libraries(pin_example_minimal PRIVATE pin)
+
+add_executable(pin_example_game_engine game_engine/main.cpp)
+target_link_libraries(pin_example_game_engine PRIVATE pin)
