@@ -25,7 +25,7 @@ template <std::size_t N> struct Nop {};
 constexpr std::size_t MAX_NOPS = 512;
 
 template <std::size_t I> void regNop(pin::Registry &reg) {
-    reg.bind<Nop<I>>(pin::Lifetime::Transient);
+    reg.bind<Nop<I>>(pin::Lifetime::Singleton);
 }
 
 template <std::size_t I> void *findNop(pin::Provider &p) {

@@ -213,9 +213,17 @@ class Provider : public Resolver {
 
   protected:
     std::shared_ptr<void> resolveService(TypeId type,
-                                         std::string_view qualifier) override {
+                                         std::string_view qualifier,
+                                         Access access) override {
         std::size_t i = findDescriptor(type, qualifier);
-        return i == NOT_FOUND ? nullptr : resolveDescriptor(i);
+        if (i == NOT_FOUND) {
+            return nullptr;
+        }
+        if (access == Access::Borrowed &&
+            descs_[i].lifetime_ == Lifetime::Transient) {
+            throw transientBorrowError(descs_[i].debugName_);
+        }
+        return resolveDescriptor(i);
     }
 
   private:

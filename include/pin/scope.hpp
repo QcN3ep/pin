@@ -26,7 +26,8 @@ class Scope : public Resolver {
 
   private:
     std::shared_ptr<void> resolveService(TypeId type,
-                                         std::string_view qualifier) override {
+                                         std::string_view qualifier,
+                                         Access access) override {
         std::size_t i = root_->findDescriptor(type, qualifier);
         if (i == Provider::NOT_FOUND) {
             return nullptr;
@@ -52,6 +53,9 @@ class Scope : public Resolver {
             }
             return scoped_.back().second;
         case Lifetime::Transient: {
+            if (access == Access::Borrowed) {
+                throw transientBorrowError(d.debugName_);
+            }
             detail::ResolveGuard guard(root_, d.debugName_);
             return d.factory_(*this);
         }

@@ -153,3 +153,16 @@ TEST_CASE("scope is movable") {
     pin::Scope inner = std::move(outer);
     CHECK(inner.get<Shared>() == p.get<Shared>());
 }
+
+TEST_CASE("borrowing a transient from a scope is rejected") {
+    resetCounters();
+    pin::Registry reg;
+    reg.bind<Request>(pin::Lifetime::Transient);
+    reg.bind<Session>(pin::Lifetime::Scoped);
+
+    pin::Provider p(std::move(reg));
+    pin::Scope s(p);
+    CHECK_THROWS_AS((void)s.ref<Request>(), pin::ResolveError);
+    CHECK(transientCtorCount == 0);
+    CHECK(&s.ref<Session>() == s.tryGet<Session>());
+}

@@ -182,6 +182,16 @@ TEST_CASE("ref on a non-singleton is rejected") {
     CHECK_THROWS_AS((void)p.ref<Plain>(), pin::ResolveError);
 }
 
+TEST_CASE("borrowing a transient through the resolver is rejected") {
+    pin::Registry reg;
+    reg.bind<Plain>(pin::Lifetime::Transient);
+
+    pin::Provider p(std::move(reg));
+    pin::Resolver &r = p;
+    CHECK_THROWS_AS((void)r.ref<Plain>(), pin::ResolveError);
+    CHECK_THROWS_AS((void)p.tryGet<Plain>(), pin::ResolveError);
+}
+
 TEST_CASE("abstract service without factory fails at build") {
     pin::Registry reg;
     reg.bind<ILogger>();
