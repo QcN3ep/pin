@@ -30,6 +30,7 @@ class Host {
     Host &operator=(const Host &) = delete;
 
     template <ModuleType M, typename... Args> Host &add(Args &&...ctorArgs) {
+        throwIfBuilt();
         for (const Entry &e : modules_) {
             if (e.id_ == typeId<M>()) {
                 throw ConfigError("pin: module '" + e.name_ +
@@ -51,9 +52,18 @@ class Host {
         return *this;
     }
 
+    // Moves the modules into the returned Application, so a Host can be
+    // built only once. A build that fails validation (missing dependency or
+    // cycle) leaves the Host intact and may be retried after fixing it.
     [[nodiscard]] Application build();
 
   private:
+    void throwIfBuilt() const {
+        if (built_) {
+            throw ConfigError("pin: Host has already been built");
+        }
+    }
+
     struct Entry {
         TypeId id_;
         std::string name_;
@@ -64,6 +74,7 @@ class Host {
 
     std::vector<Entry> modules_;
     unsigned threads_ = 1;
+    bool built_ = false;
 };
 
 class Application {
@@ -237,9 +248,11 @@ class Application {
 };
 
 inline Application Host::build() {
+    throwIfBuilt();
     const std::size_t n = modules_.size();
 
     for (Entry &e : modules_) {
+        e.depIdx_.clear();
         for (const auto &[DepId, DepName] : e.deps_) {
             const auto it = std::ranges::find_if(
                 modules_, [&](const Entry &m) { return m.id_ == DepId; });
@@ -324,6 +337,10 @@ inline Application Host::build() {
         msg += " -> " + modules_[path[0]].name_;
         throw ConfigError(msg);
     }
+
+    // From here on modules are moved out; even if a configure() throws, the
+    // Host no longer owns them.
+    built_ = true;
 
     Registry reg;
     std::vector<Application::ModEntry> mods;

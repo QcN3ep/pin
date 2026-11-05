@@ -114,6 +114,12 @@ struct JoinModule : pin::Module {
     void start(pin::Resolver &) override { observed_->store(count_->load()); }
 };
 
+struct ConfigureThrows : pin::Module {
+    void configure(pin::Registry &) const override {
+        throw std::runtime_error("configure failed");
+    }
+};
+
 struct CycTwo;
 struct CycOne : pin::Module {
     using Depends = pin::Deps<CycTwo>;
@@ -218,6 +224,36 @@ TEST_CASE("adding the same module twice is rejected") {
     pin::Host host;
     host.add<CoreModule>(l);
     CHECK_THROWS_AS(host.add<CoreModule>(l), pin::ConfigError);
+}
+
+TEST_CASE("a host can only be built once") {
+    Log l;
+    pin::Host host;
+    host.add<CoreModule>(l);
+    pin::Application app = host.build();
+
+    CHECK_THROWS_AS((void)host.build(), pin::ConfigError);
+    CHECK_THROWS_AS(host.add<WindowModule>(l), pin::ConfigError);
+    app.run([](pin::Resolver &) {});
+}
+
+TEST_CASE("a host whose validation failed can be fixed and rebuilt") {
+    Log l;
+    pin::Host host;
+    host.add<RenderModule>(l).add<CoreModule>(l);
+    CHECK_THROWS_AS((void)host.build(), pin::ConfigError);
+
+    host.add<WindowModule>(l);
+    pin::Application app = host.build();
+    app.run([](pin::Resolver &) {});
+    CHECK(std::ranges::find(l.events_, "start:Render") != l.events_.end());
+}
+
+TEST_CASE("a host is consumed even if configure throws") {
+    pin::Host host;
+    host.add<ConfigureThrows>();
+    CHECK_THROWS_AS((void)host.build(), std::runtime_error);
+    CHECK_THROWS_AS((void)host.build(), pin::ConfigError);
 }
 
 TEST_CASE("start failure rolls back started modules in reverse order") {
