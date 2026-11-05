@@ -132,6 +132,10 @@ struct SelfDep : pin::Module {
     using Depends = pin::Deps<SelfDep>;
 };
 
+struct FailingStart : pin::Module {
+    void start(pin::Resolver &) override { throw std::runtime_error("nope"); }
+};
+
 struct RunThrows : pin::Module {
     Log *l_;
     explicit RunThrows(Log &ref) : l_(&ref) {}
@@ -319,4 +323,21 @@ TEST_CASE("modules without declared dependencies form one level") {
     pin::Application app = host.build();
     app.run([](pin::Resolver &) {});
     CHECK(l.events_.size() == 6);
+}
+
+TEST_CASE("run can only be called once") {
+    pin::Host host;
+    pin::Application app = host.build();
+
+    app.run([](pin::Resolver &) {});
+    CHECK_THROWS_AS(app.run([](pin::Resolver &) {}), pin::Error);
+}
+
+TEST_CASE("run cannot be retried after a failed start") {
+    pin::Host host;
+    host.add<FailingStart>();
+    pin::Application app = host.build();
+
+    CHECK_THROWS_AS(app.run([](pin::Resolver &) {}), pin::Error);
+    CHECK_THROWS_AS(app.run([](pin::Resolver &) {}), pin::Error);
 }
