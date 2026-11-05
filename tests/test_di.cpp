@@ -117,6 +117,29 @@ TEST_CASE("instance registration accepts values and shared pointers") {
     CHECK(p.get<ILogger>()->name() == "console");
 }
 
+TEST_CASE("instance registration accepts lvalues and deduces the type") {
+    Plain value{.value_ = 3};
+    const Plain constValue{.value_ = 4};
+    auto shared = std::make_shared<ConsoleLogger>();
+
+    pin::Registry reg;
+    reg.instance(value);
+    reg.instance(constValue, "const");
+    reg.instance<Plain>(value, "explicit");
+    reg.instance<Plain>({.value_ = 5}, "braced");
+    reg.instance(Plain{.value_ = 6}, "rvalue");
+    reg.instance<ILogger>(shared);
+
+    pin::Provider p(std::move(reg));
+    CHECK(p.ref<Plain>().value_ == 3);
+    CHECK(&p.ref<Plain>() != &value);
+    CHECK(p.ref<Plain>("const").value_ == 4);
+    CHECK(p.ref<Plain>("explicit").value_ == 3);
+    CHECK(p.ref<Plain>("braced").value_ == 5);
+    CHECK(p.ref<Plain>("rvalue").value_ == 6);
+    CHECK(p.get<ILogger>() == shared);
+}
+
 TEST_CASE("binding an interface constructs the implementation") {
     pin::Registry reg;
     reg.bind<ILogger, ConsoleLogger>();
