@@ -1,0 +1,219 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIN_DEPS_DIR: ${{ github.workspace }}/.fetchcontent
+  CMAKE_GENERATOR: Ninja
+
+jobs:
+  build-test:
+    name: ${{ matrix.cxx }} / ${{ matrix.build_type }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Examples use C++23 <print>, which needs libstdc++ 14+. The runner's
+          # default g++ is 13, so select the preinstalled g++-14 explicitly.
+          - { cxx: g++-14, build_type: Debug }
+          - { cxx: g++-14, build_type: Release }
+          - { cxx: clang++, build_type: Debug }
+          - { cxx: clang++, build_type: Release }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          ${{ matrix.cxx }} --version | head -n1
+          cmake --version | head -n1
+          ninja --version
+
+      - name: Cache doctest sources
+        id: doctest-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIN_DEPS_DIR }}/doctest-src
+          key: doctest-v2.4.12
+
+      - name: Fetch doctest (cache miss)
+        if: steps.doctest-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v2.4.12 \
+            https://github.com/doctest/doctest.git "$PIN_DEPS_DIR/doctest-src"
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_CXX_EXTENSIONS=OFF
+          -DPIN_BUILD_TESTS=ON
+          -DPIN_BUILD_EXAMPLES=ON
+          -DPIN_BUILD_BENCHMARKS=OFF
+          -DFETCHCONTENT_SOURCE_DIR_DOCTEST="$PIN_DEPS_DIR/doctest-src"
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    name: sanitizer (${{ matrix.sanitize }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { sanitize: "address,undefined" }
+          - { sanitize: "thread" }
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache doctest sources
+        id: doctest-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIN_DEPS_DIR }}/doctest-src
+          key: doctest-v2.4.12
+
+      - name: Fetch doctest (cache miss)
+        if: steps.doctest-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v2.4.12 \
+            https://github.com/doctest/doctest.git "$PIN_DEPS_DIR/doctest-src"
+
+      # TSan aborts on high-entropy ASLR kernels without this.
+      - name: Relax ASLR for TSan
+        if: matrix.sanitize == 'thread'
+        run: sudo sysctl -w vm.mmap_rnd_bits=28 || echo "::warning::could not lower ASLR entropy; TSan may abort"
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_CXX_EXTENSIONS=OFF
+          -DPIN_SANITIZE=${{ matrix.sanitize }}
+          -DPIN_BUILD_TESTS=ON
+          -DPIN_BUILD_EXAMPLES=ON
+          -DPIN_BUILD_BENCHMARKS=OFF
+          -DFETCHCONTENT_SOURCE_DIR_DOCTEST="$PIN_DEPS_DIR/doctest-src"
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  warnings:
+    name: gcc-14 -Werror
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache doctest sources
+        id: doctest-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIN_DEPS_DIR }}/doctest-src
+          key: doctest-v2.4.12
+
+      - name: Fetch doctest (cache miss)
+        if: steps.doctest-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v2.4.12 \
+            https://github.com/doctest/doctest.git "$PIN_DEPS_DIR/doctest-src"
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=g++-14
+          -DCMAKE_CXX_EXTENSIONS=OFF
+          -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic -Werror -D_GLIBCXX_ASSERTIONS"
+          -DPIN_BUILD_TESTS=ON
+          -DPIN_BUILD_EXAMPLES=ON
+          -DPIN_BUILD_BENCHMARKS=OFF
+          -DFETCHCONTENT_SOURCE_DIR_DOCTEST="$PIN_DEPS_DIR/doctest-src"
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  headers:
+    name: header self-containment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check with g++
+        run: CXX=g++ ./scripts/check-headers.sh
+
+      - name: Check with clang++
+        run: CXX=clang++ ./scripts/check-headers.sh
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          python3 -m venv "$RUNNER_TEMP/fmt"
+          "$RUNNER_TEMP/fmt/bin/pip" install --quiet --disable-pip-version-check \
+            clang-format==23.1.4
+          "$RUNNER_TEMP/fmt/bin/clang-format" --version
+
+      - name: Check formatting
+        run: |
+          files=$(git ls-files '*.hpp' '*.cpp')
+          "$RUNNER_TEMP/fmt/bin/clang-format" --dry-run --Werror $files
+
+  benchmarks:
+    name: benchmarks (gcc, Release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # gcc only: Google Benchmark v1.9.2 fails newer clang's -Werror.
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_CXX_EXTENSIONS=OFF
+          -DPIN_BUILD_TESTS=OFF
+          -DPIN_BUILD_EXAMPLES=OFF
+          -DPIN_BUILD_BENCHMARKS=ON
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Smoke-run benchmarks (no numeric assertions)
+        run: ./build/benchmarks/pin_bench --benchmark_min_time=0.01s

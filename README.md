@@ -1,5 +1,7 @@
 # Pin
 
+[![CI](https://github.com/QcN3ep/pin/actions/workflows/ci.yml/badge.svg)](https://github.com/QcN3ep/pin/actions/workflows/ci.yml)
+
 ## A header-only, zero-dependency module management library
 
 Pin is a header-only, zero-dependency C++23 module management library. It provides a DI container and a module system for correctly and conveniently handling calls and coordination between different modules in large C++ projects, guaranteeing build safety while offering a high-performance, lock-free, allocation-free hot path.

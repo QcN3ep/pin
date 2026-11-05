@@ -45,6 +45,10 @@ if(PIN_BUILD_TESTS)
         tests/test_lifecycle.cpp
         tests/test_threads.cpp)
     target_link_libraries(pin_tests PRIVATE pin doctest::doctest)
+
+    enable_testing()
+    add_test(NAME pin_tests COMMAND pin_tests)
+    set_tests_properties(pin_tests PROPERTIES TIMEOUT 120)
 endif()
 
 if(PIN_BUILD_EXAMPLES)

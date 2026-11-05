@@ -21,3 +21,4 @@ Testing/
 Thumbs.db
 *~
 *.tmp
+.fetchcontent/
