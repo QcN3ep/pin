@@ -12,10 +12,6 @@ target_include_directories(pin INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_compile_features(pin INTERFACE cxx_std_23)
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(pin INTERFACE -Wall -Wextra -Wpedantic -Wshadow)
-endif()
-
 if(PIN_SANITIZE)
     add_compile_options(-fsanitize=${PIN_SANITIZE} -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=${PIN_SANITIZE})
